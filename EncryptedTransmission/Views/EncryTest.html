@@ -1,0 +1,53 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>EncryTest</title>
+</head>
+
+<body>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.0.0/crypto-js.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/jsencrypt/2.3.1/jsencrypt.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.js'></script>
+    <script>
+        function GetRSAKey(params, callback) {
+            $.post({
+                url: "https://localhost:5001/Encry/GetServerKey",
+                crossDomain: true,
+                xhrFields: {
+                    withCredentials: true
+                },
+                params: {},
+                success: function(response) {
+                    var encrypt = new JSEncrypt();
+                    encrypt.setPublicKey(atob(response.data));
+                    params = '1qaz2wsx3edc4rfv5tgb' //JSON.stringify(params);
+                    console.log('加密前', params)
+                    var Encryptdata = encrypt.encrypt(params);
+                    console.log('加密後', Encryptdata)
+
+                    //+號的處理：因為數據在網絡上傳輸時，非字母數字字符都將被替換成百分號（%）後跟兩位十六進制數，
+                    //而base64編碼在傳輸到後端的時候，+會變成空格，因此先替換掉。後端再替換回來
+                    Encryptdata = encodeURI(Encryptdata).replace(/\+/g, '%2B');
+                    if (callback) {
+                        callback(Encryptdata, response.Token);
+                    }
+                }
+            });
+        }
+
+        GetRSAKey('1qaz2wsx3edc4rfv5tgb', function(a, b) {
+            console.log(a)
+            $.post({
+                url: "https://localhost:5001/Encry/SetEncryData",
+                params: a,
+                success: function(response) {
+                    console.log('EncryData', response);
+                }
+            })
+        })
+    </script>
+</body>
+
+</html>
