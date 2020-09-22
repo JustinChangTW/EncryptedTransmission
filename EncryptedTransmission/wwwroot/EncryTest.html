@@ -11,41 +11,109 @@
     <script src='https://cdnjs.cloudflare.com/ajax/libs/jsencrypt/2.3.1/jsencrypt.js'></script>
     <script src='https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.js'></script>
     <script>
-        function GetRSAKey(params, callback) {
-            $.post({
-                url: "https://localhost:5001/Encry/GetServerKey",
-                crossDomain: true,
-                xhrFields: {
-                    withCredentials: true
-                },
-                params: {},
-                success: function(response) {
-                    var encrypt = new JSEncrypt({
-                        default_key_size: 2048
+        function Transation(data, url, successcallback) {
+            (function (data, url, successcallback) {
+                function GetRSAKey(params, url, callback, successcallback) {
+                    $.ajax({
+                        type: "POST",
+                        url: "https://localhost:5001/Encry/GetServerKey",
+                        success: function(response) {
+                            var encrypt = new JSEncrypt({
+                                default_key_size: 2048
+                            });
+                            tranData.ServerDesString = response.data;
+                            encrypt.setPublicKey(atob(response.data));
+                            console.log('加密前', tranData.baseAesString)
+                            var encryptdata = encrypt.encrypt(tranData.baseAesString);
+                            console.log('加密後', encryptdata)
+                            if (callback) {
+                                callback(params, url, encryptdata, successcallback);
+                            }
+                        }
                     });
-                    encrypt.setPublicKey(atob(response.data));
-                    params = '1234' //JSON.stringify(params);
-                    console.log('加密前', params)
-                    var Encryptdata = encrypt.encrypt(params);
-                    console.log('加密後', Encryptdata)
-                    if (callback) {
-                        callback(Encryptdata, response.Token);
-                    }
                 }
-            });
+
+                function aesEncrypt(data) {
+                    var mergeKey = tranData.baseAesString + tranData.extendString;
+                    var key = CryptoJS.SHA256(mergeKey)
+                    var iv = CryptoJS.MD5(mergeKey)
+                    return CryptoJS.AES.encrypt(data, key, { //  AES加密
+                        iv: iv,
+                        mode: CryptoJS.mode.CBC,
+                        padding: CryptoJS.pad.Pkcs7 
+                    });
+                }
+
+                function aesdecrypt(data) {
+                    var mergeKey = tranData.baseAesString + tranData.extendString;
+                    var key = CryptoJS.SHA256(mergeKey)
+                    var iv = CryptoJS.MD5(mergeKey)
+                    return CryptoJS.AES.decrypt(data, key, {
+                        iv: iv,
+                        mode: CryptoJS.mode.CBC,
+                        padding: CryptoJS.pad.Pkcs7
+                    });
+                }
+
+                function getRandomString() {
+                    return Math.random().toString(36).substring(2)
+                }
+
+
+                //記錄傳輸使用的資料
+                var tranData = {
+                    baseAesString: getRandomString(),
+                    extendString: "",
+                    ServerDesString: "",
+                    data: ""
+                }
+
+                //執行加密傳輸
+                GetRSAKey(data, url, function (a, url, b) {
+                    tranData.data = a;
+                    tranData.extendString = getRandomString();
+                    console.log('tranData=>', tranData)
+                    var encryptData = aesEncrypt(a)
+                    $.ajax({
+                        type: "POST",
+                        url: "https://localhost:5001/Encry/SetClientKey",
+                        contentType: "application/json",
+                        data: JSON.stringify(b),
+                        success: function(response) {
+                            console.log('EncryData', response)
+
+                            //組傳送的資料
+                            sendData = {
+                                data: encryptData.toString(),
+                                extendString: tranData.extendString
+                            }
+                            console.log("sendData", sendData)
+
+                            $.ajax({
+                                type: "POST",
+                                url: url,
+                                contentType: "application/json",
+                                data: JSON.stringify(sendData),
+                                success: function (response) {
+                                    var decode = aesdecrypt(response.data)
+                                    if (successcallback) {
+                                        successcallback(data)
+                                    }
+                                }
+                            })
+                        }
+                    })
+                }, successcallback)
+
+            })(data, url, successcallback)
         }
 
-        GetRSAKey('1qaz2wsx3edc4rfv5tgb', function(a, b) {
-            console.log(a)
-            $.ajax({
-                type: "POST",
-                url: "https://localhost:5001/Encry/SetEncryData",
-                contentType: "application/json",
-                data: JSON.stringify(a),
-                success: function(response) {
-                    console.log('EncryData', response)
-                }
-            })
+
+
+        var data = "TEST12341111"
+        var url = "https://localhost:5001/Encry/DecryptWihtAES"
+        Transation(data, url, function (response) {
+            console.log("接收處理完成的資料（正文）",response)
         })
     </script>
 </body>

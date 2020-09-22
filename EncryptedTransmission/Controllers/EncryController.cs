@@ -4,6 +4,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using EncryptionLib;
+using EncryptionLib.Extension;
+using EncryptionLibs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,11 +13,13 @@ namespace EncryptedTransmission.Controllers
 {
     public class EncryController : Controller
     {
-        private RSAEncryption encryption;
+        private readonly RSAEncryption rsaEncryption;
+        private readonly AESEncryption aesEncryption;
 
         public EncryController()
         {
-            encryption = new RSAEncryption(null);
+            rsaEncryption = new RSAEncryption(null);
+            aesEncryption = new AESEncryption();
         }
         public IActionResult Index()
         {
@@ -24,34 +28,49 @@ namespace EncryptedTransmission.Controllers
 
         public JsonResult GetServerKey()
         {
-            Console.WriteLine("---GetServerKey-------------------------------------------");
             Console.WriteLine(HttpContext.Session.Id);
-            string publicKey = encryption.GeneratePublicWithXmlFormat();
-            string privateKey = encryption.GeneratePrivateKeyWithXmlFormat();
-            string privateKeyString = encryption.GeneratePublicKeyWithStringFormat();
-            HttpContext.Session.Set("PUBLIC_KEY", Encoding.UTF8.GetBytes(publicKey));
-            HttpContext.Session.Set("PRIVATE_KEY", Encoding.UTF8.GetBytes(privateKey));
-            HttpContext.Session.Set("PRIVATE_FE_KEY", Encoding.UTF8.GetBytes(privateKeyString));
+            string publicKey = rsaEncryption.GeneratePublicWithXmlFormat();
+            string privateKey = rsaEncryption.GeneratePrivateKeyWithXmlFormat();
+            string privateKeyString = rsaEncryption.GeneratePublicKeyWithStringFormat();
 
-            var encryString = encryption.Encryption(publicKey, "1234");
-            Console.WriteLine("---encryString---------------------------------------");
-            Console.WriteLine(encryString);
-            var decryptString = encryption.DecryptWithXmlFormat(privateKey, encryString);
-            Console.WriteLine("--decryptString----------------------------------------");
-            Console.WriteLine(decryptString);
-            //var decryptString2 = encryption.DecryptWithStringFormat(privateKeyString, encryString);
+            HttpContext.Session.Set("PUBLIC_KEY", publicKey.ToBytes());
+            HttpContext.Session.Set("PRIVATE_KEY", privateKey.ToBytes());
+            HttpContext.Session.Set("PRIVATE_FE_KEY", privateKeyString.ToBytes());
 
-            return new JsonResult(new { code = "200", data = Convert.ToBase64String(Encoding.UTF8.GetBytes(privateKeyString)) });
+            return new JsonResult(new { code = "200", data = Convert.ToBase64String(privateKeyString.ToBytes()) });
         }
 
-        public JsonResult SetEncryData([FromBody] string data)
+        public JsonResult SetClientKey([FromBody] string key)
         {
-            Console.WriteLine("---SetEncryData-------------------------------------------");
-            Console.WriteLine(data);
-            Console.WriteLine(HttpContext.Session.Id);
             var privateKey = HttpContext.Session.Get("PRIVATE_KEY");
-            var decryptString = encryption.DecryptWithXmlFormat(Encoding.UTF8.GetString(privateKey), data);
-            return new JsonResult(new { code = "200", data = decryptString });
+            var decryptString = rsaEncryption.DecryptWithXmlFormat(privateKey.ToUTF8String(), key);
+            HttpContext.Session.Set("CLIENT_AES_KEY",decryptString.ToBytes());
+            return new JsonResult(new { code = "200"});
         }
+
+        public JsonResult DecryptWihtAES([FromBody] SendData sendData)
+        {
+            //接收資料並解密
+            var clientAseKey = HttpContext.Session.Get("CLIENT_AES_KEY").ToUTF8String();
+            var mergeKey = clientAseKey + sendData.ExtendString;
+            var decryptString = aesEncryption.AesDecryptBase64(sendData.Data, mergeKey);
+            Console.WriteLine("接收資料並解密");
+            Console.WriteLine(decryptString);
+
+            //處理資料.....dosomething()
+            Console.WriteLine("處理資料.....dosomething()");
+
+            //將處理完的資料加密
+            var encryptString = aesEncryption.AesEncryptBase64(decryptString, mergeKey);
+            Console.WriteLine("將處理完的資料加密");
+            Console.WriteLine(encryptString);
+            return new JsonResult(new { code = "200", data = encryptString });
+        }
+    }
+    
+    public class SendData
+    {
+        public string Data { get; set; }
+        public string ExtendString { get; set; }
     }
 }
